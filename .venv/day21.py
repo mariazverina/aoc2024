@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 from utils import *
 
 filename = __file__.split("/")[-1].split('.')[0]
@@ -136,6 +138,33 @@ class Keypad:
         # print("code", out)
         return out, tlen
 
+    def curves(self, c, previous, evalfun=None):
+        # print("coded:", output)
+
+        x, y = self.invmap[previous]
+        tx, ty = self.invmap[c]
+        vout, hout = "", ""
+        if ty < y:
+            vout = "^" * (y - ty)
+        if ty > y:
+            vout = "v" * (ty - y)
+        if tx < x:
+            hout = "<" * (x - tx)
+        if tx > x:
+            hout = ">" * (tx - x)
+
+        vfirst = vout + hout + 'A'
+        hfirst = hout + vout + 'A'
+
+        if self.keymap[(tx, y)] == " ":
+            return [vfirst]
+        if self.keymap[(x, ty)] == " ":
+            return [hfirst]
+        if len(vout) == 0 or len(hout) == 0:
+            return [hfirst]
+
+        return [vfirst, hfirst]
+
     def ncoded(self, s, n):
         for i in range(n):
             s = self.coded(s)
@@ -145,11 +174,35 @@ class Keypad:
         self.nextkeypad = nextkeypad
         self.nextkeypad.prevkeypad = self
 
+KEYNUM = Keypad("789,456,123, 0A")
+KEYARR = Keypad(" ^A,<v>")
+
+def genarrcurve(c, p):
+    return KEYARR.curves(c, p)
+
+def gennumcurve(c, p):
+    return KEYNUM.curves(c, p)
+
+@lru_cache(maxsize=None)
+def curvelen(s, n, curvgen=genarrcurve):
+    if n == 0:
+        return len(s)
+    s = 'A'+s
+    minlen = 0
+    for i in range(1, len(s)):
+        curves = curvgen(s[i], s[i-1])
+        minlen += min([curvelen(c, n-1) for c in curves])
+
+    return minlen
+
+
 s1 = "<vA<AA>>^AvAA<^A>A<v<A>>^AvA^A<vA>^A<v<A>^A>AAvA^A<v<A>A>^AAAvA<^A>A"
 
 k1 = Keypad(" ^A,<v>")
 k2 = Keypad(" ^A,<v>")
 k3 = Keypad("789,456,123, 0A")
+
+
 
 k1.chain(k2)
 k2.chain(k3)
@@ -172,24 +225,6 @@ for line in lines:
 print("S = ", s)
 
 
-# s = 0
-# for line in lines:
-#     out = kfinal.coded(line)
-#     print(len(out), line)
-#     s += int(line[:3]) * len(out)
-# print("S = ", s)
-# too low 183354
-# too high 185176
-
-# 980A: <v<A>>^AAAvA^A<vA<AA>>^AvAA<^A>A<v<A>A>^AAAvA<^A>A<vA>^A<A>A
-# 179A: <v<A>>^A<vA<A>>^AAvAA<^A>A<v<A>>^AAvA^A<vA>^AA<A>A<v<A>A>^AAAvA<^A>A
-# 456A: <v<A>>^AA<vA<A>>^AAvAA<^A>A<vA>^A<A>A<vA>^A<A>A<v<A>A>^AAvA<^A>A
-# 379A: <v<A>>^AvA^A<vA<AA>>^AAvA<^A>AAvA^A<vA>^AA<A>A<v<A>A>^AAAvA<^A>A""".split('\n')
-#
-# for q in qq:
-#     q = q.split(": ")
-#     print(q[0], " => ", k1.move(q[1]))
-#
 
 kk = Keypad(" ^A,<v>")
 
@@ -197,124 +232,11 @@ kk1 = Keypad(" ^A,<v>")
 kk2 = Keypad(" ^A,<v>")
 kk1.chain(kk2)
 
-# v<<A>^AAA>A<vAAA>^AvA<^A>A<vA>^A
-D1 = {'^': '<A', 'A': 'A', '<': 'v<<A', 'v': '<vA', '>': 'vA'}
-D2 = {'^^': 'A', '^A': '>A', '^<': 'v<A', '^v': 'vA', '^>': '>vA', 'A^': '<A', 'AA': 'A', 'A<': 'v<<A', 'Av': '<vA',
-      'A>': 'vA', '<^': '>^A', '<A': '>>^A', '<<': 'A', '<v': '>A', '<>': '>>A', 'v^': '^A', 'vA': '>^A', 'v<': '<A',
-      'vv': 'A', 'v>': '>A', '>^': '<^A', '>A': '^A', '><': '<<A', '>v': '<A', '>>': 'A'}
+s = 0
+for line in lines:
+    ll = curvelen(line, 26, gennumcurve)
+    print(line, ll)
+    s += int(line[:3]) * ll
 
-def v2code(q):
-    global D1, D2
-    out = D1[q[0]]
-    for i in range(0, len(q) - 1):
-        out += D2[q[i:i + 2]]
-    return out
+print("Part 2: S =", s)
 
-def n2code(q, n):
-    for _ in range(n):
-        q = v2code(q)
-    return q
-
-print("LONG")
-k1.move('<vA<AA>>^AvA<^A>AAvA^Av<<A>>^AvA^A<vA>^Av<<A>>^AvA<^A>Av<<A>A>^AAvA<^A>A')
-print("Short")
-k1.move('<vA<AA>>^AvA<^A>AAvA^Av<<A>>^AvA^Av<<A>A>^AvA^A<A>Av<<A>A>^AAvA<^A>A')
-
-
-fastcache = {}
-def fastcode(s):
-    out = ""
-    s = s.split("A")
-    s.pop() # s is A terminated .. final chunk is a split artefact
-    for chunk in s:
-        chunk += 'A'
-        if chunk not in fastcache:
-            fastcache[chunk] = v2code(chunk)
-        out += fastcache[chunk]
-    return out
-
-cache = {}
-def n5code(s):
-    if s not in cache:
-        cache[s] = n2code(s, 5)
-    return cache[s]
-
-lencache = {}
-def len5code(q, n):
-    q = n5code(q)
-    if n == 5:
-        return len(q)
-    s = 0
-    qs = q.split('A')
-    qs.pop() # q is A terminated .. final chunk is a split artefact
-    for c in qs:
-        c += 'A'
-        if (c, n) not in lencache:
-            lencache[(c, n)] = len5code(c, n-5)
-        s += lencache[(c, n)]
-
-    return s
-
-qlencache = {}
-def qlencode(q, n):
-    q = fastcode(q)
-    if n == 1:
-        return len(q)
-    s = 0
-    qs = q.split('A')
-    qs.pop() # q is A terminated .. final chunk is a split artefact
-    for c in qs:
-        c += 'A'
-        if (c, n) not in qlencache:
-            qlencache[(c, n)] =  qlencode(c, n-1)
-        s += qlencache[(c, n)]
-    return s
-
-# print("N = ",qlencode('<^^A^Av>AvvA', 15))
-
-def eval_lines(niter):
-    knum = Keypad("789,456,123, 0A")
-    s = 0
-    outcomes = []
-    for line in lines:
-        out = knum.coded2(line, lambda x: qlencode(x, niter))
-        outcomes.append(out)
-        print(line, out)
-        s += int(line[:3]) * out[1]
-        # print(k1.move(out))
-        # print(out)
-    print("S = ", s)
-    return outcomes
-
-def eval5_lines(niter):
-    knum = Keypad("789,456,123, 0A")
-    s = 0
-    outcomes = []
-    for line in lines:
-        out = knum.coded2(line, lambda x: len5code(x, niter))
-        outcomes.append(out)
-        print(line, out)
-        s += int(line[:3]) * out[1]
-        # print(k1.move(out))
-        # print(out)
-    print("S = ", s)
-    return outcomes
-
-qq = eval_lines(2)
-qq = eval5_lines(25)
-# 262412889851360 too high
-# 228800606998554
-print("part 2",qq)
-
-print("QQ:", len5code('<^^^AvvvA>^AvA', 25))
-
-print("N = ",len5code('<^^A^Av>AvvA', 20))
-
-print("sanity check")
-# qq = eval_lines(5)
-# qq = eval5_lines(25)
-
-qq = eval_lines(25)
-print(qq)
-# qq = eval5_lines(3)
-# print(qq)
